@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import pymysql.cursors
-import os, sys, configparser
+import configparser
+import json
 import logging.handlers
-import json, requests
-from datetime import datetime, time
 import time as t
+from datetime import datetime
+import pymysql.cursors
+
+from downloader.plugins.bitstamp import client
+
 
 # config
 config = configparser.ConfigParser()
@@ -108,23 +111,24 @@ def generateFilename(filename):
 '''
     Downloading bitcoin data
 '''
-def downloadBitcoindata_Current():
-    r = requests.get("http://api.bitcoincharts.com/v1/markets.json")
-    logger.info("Status from download: %s" % str(r.status_code))
+def downloadBitcoindata_Current(data, exchange):
 
-    filename_json = generateFilename('bitcoin')
+    filename_json = generateFilename(exchange)
+
+    logger.debug("Filename to save: %s" % filename_json)
 
     # save json to file
-    data = r.json()
     with open(storage['store_data'] + filename_json, 'w') as f:
-        json.dump(data, f)
+        json.dump(data[1], f)
 
-    return r.status_code, filename_json
+    f.close()
+
+    return data[0], filename_json
 
 '''
     Insert the file into the import job queue
 '''
-def insertImportJQ(filename, action):
+def insertImportJQ(filename, action, value):
     try:
         db = pymysql.connect(prod_server['servername'], prod_server['username'], prod_server['password'],
                              prod_server['database'])
@@ -132,10 +136,10 @@ def insertImportJQ(filename, action):
         # prepare cursor
         cursor_job = db.cursor()
 
-        sql = "insert into import_jq(`action`, `idstock`, `filename`, `timestamp`, `insert_timestamp`, `insert_user`, " \
-              "`modify_timestamp`, `modify_user`) values (%s, 'bitcoin', %s, now(), 'downloader', now(), 'downloader');"
+        sql = "insert into import_jq(`action`, `id_stock`, `filename`, `timestamp`, `insert_timestamp`, `insert_user`, " \
+              "`modify_timestamp`, `modify_user`) values (%s, %s, %s, now(), now(), 'downloader', now(), 'downloader');"
 
-        cursor_job.execute(sql, (action, filename))
+        cursor_job.execute(sql, (action, value, filename))
 
         db.commit()
         return True
@@ -152,14 +156,25 @@ def insertImportJQ(filename, action):
 
 def main():
     logger.info('Start StockanalysesDownloader...')
+    bitstamp_client = client.Public()
+
     while True:
         logger.debug('Get a job...')
+        action_tmp = "-1"
         status = False
         result = getJob()
+        base = ''
+        quote = ''
+        exchange = ''
 
 
         if result != 0 and result[0] == 1000:
-            logger.info('Job action %s, value %s' % (result[0], result[1]))
+            array = result[1].split("#")
+            base = array[1]
+            quote = array[2]
+            exchange = array[0]
+
+            logger.info('Job action: %s, base: %s, quote: %s, exchange: %s' % (result[0], base, quote, exchange))
             action_tmp = updateJob(result[0], '1100', result[1])
 
             logger.info('Set action to %s' % ('1100'))
@@ -167,15 +182,20 @@ def main():
             logger.info('No job for me...')
 
         if action_tmp == '1100':
-            status_code = downloadBitcoindata_Current()
-            logger.debug("Status returned from downloadBitcoindata_Current() is %s" % (status_code[0]))
+            if exchange == "bitstamp":
+                data_json = bitstamp_client.ticker(base, quote)
 
-            if status_code[0] == '200':
+            logger.debug("HTTP Status: %s; JSON - Data: %s" % (data_json[0], data_json[1]))
+
+            status_code = downloadBitcoindata_Current(data_json, exchange)
+            logger.debug("Status returned from download Bitcoindata_Current() is %s" % (status_code[0]))
+
+            if status_code[0] == 200:
                 action_tmp = updateJob(action_tmp, '1200', result[1])
                 logger.info('Set action to %s' % ('1200'))
 
             if action_tmp == '1200':
-                status = insertImportJQ(status_code[1], result[1])
+                status = insertImportJQ(status_code[1], result[0], result[1])
 
             if status == True:
                 action_tmp = updateJob(action_tmp, '1300', result[1])
