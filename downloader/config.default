@@ -5,5 +5,5 @@ password=123456
 database=stockanalyses_v2
 
 [path]
-store_data=../data/
+store_data=/opt/stockanalyses-data/
 storage_logs=../logs/
