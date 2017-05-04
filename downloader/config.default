@@ -6,4 +6,4 @@ database=stockanalyses_v2
 
 [path]
 store_data=/opt/stockanalyses-data/
-storage_logs=../logs/
+storage_logs=/opt/stockanalyses-logs/
