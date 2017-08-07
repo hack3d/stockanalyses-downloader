@@ -8,6 +8,7 @@ import logging.handlers
 import time as t
 from datetime import datetime
 import pymysql.cursors
+import requests
 
 from downloader.plugins.bitstamp import client
 
@@ -45,61 +46,41 @@ logger.addHandler(fh)
 logger.addHandler(handler)
 #logger.addHandler(ch)
 
+
 '''
     Try to get a job from the database
 '''
 def getJob():
     try:
-        db = pymysql.connect(prod_server['servername'], prod_server['username'], prod_server['password'], prod_server['database'])
+        print(prod_server['url'] + 'job/downloader_jobs')
+        r = requests.get(prod_server['url'] + 'job/downloader_jobs')
+        print(r.text)
 
-        # prepare cursor
-        cursor_job = db.cursor()
+        return r.json()
 
-        sql = 'select action, value, type_idtype, timestamp from downloader_jq where state = 0 and timestamp <= now() ' \
-              'order by timestamp desc limit 1;'
-        logger.debug(sql)
-        cursor_job.execute(sql)
+    except requests.exceptions.RequestException as e:
+        logger.error("Error [%s]" % (e))
 
-        # check if we get a result
-        if cursor_job.rowcount > 0:
-            result = cursor_job.fetchone()
-        else:
-            result = 0
-
-        return result
-
-    except pymysql.Error as e:
-	    db.rollback()
-	    logger.error("Error [%s]" % (e))
-
-    finally:
-        cursor_job.close()
-        db.close()
 
 '''
     Update the column action for a specific job
 '''
-def updateJob(current_action, new_action, value):
+def updateJob(job_id, new_action, value):
     try:
-        db = pymysql.connect(prod_server['servername'], prod_server['username'], prod_server['password'], prod_server['database'])
+        json_data = []
+        json_data.append({'action': str(new_action)})
+        print(prod_server['url'] + 'job/set_downloader_jobs_state/' + str(job_id))
+        r = requests.put(prod_server['url'] + 'job/set_downloader_jobs_state/' + str(job_id), data=json.dumps(json_data), headers={'Content-Type': 'application/json'})
 
-        # prepare cursor
-        cursor_job = db.cursor()
+        result_text = r.text
+        result_text = result_text.encode('utf-8')
+        print(result_text)
 
-        sql = "update `downloader_jq` set `action`= %s, `modify_timestamp` = now(), `modify_user` = 'downloader' where `action` = %s and `value` = %s;"
-        logger.debug(sql % (new_action, current_action, value))
-        cursor_job.execute(sql,(new_action, current_action, value))
+        return new_action
 
-        db.commit()
-
-    except pymysql.Error as e:
-        db.rollback()
-        new_action = 0
+    except requests.exceptions.RequestException as e:
         logger.error("Error [%s]" % (e))
 
-    finally:
-        return new_action
-        db.close()
 
 '''
     Generate a unique filename
@@ -132,27 +113,23 @@ def downloadBitcoindata_Current(data, exchange):
 '''
 def insertImportJQ(filename, action, value):
     try:
-        db = pymysql.connect(prod_server['servername'], prod_server['username'], prod_server['password'],
-                             prod_server['database'])
+        json_data = []
+        json_data.append({"action": str(action), "id_stock": str(value), "filename": str(filename)})
+        logger.debug('insertImportJQ JSON-Data: %s' % (json_data))
 
-        # prepare cursor
-        cursor_job = db.cursor()
+        print(prod_server['url'] + 'job/add-import-data')
+        r = requests.post(prod_server['url'] + 'job/add-import-data', data=json.dumps(json_data), headers={'Content-Type': 'application/json'})
 
-        sql = "insert into import_jq(`action`, `id_stock`, `filename`, `timestamp`, `insert_timestamp`, `insert_user`, " \
-              "`modify_timestamp`, `modify_user`) values (%s, %s, %s, now(), now(), 'downloader', now(), 'downloader');"
-
-        cursor_job.execute(sql, (action, value, filename))
-
-        db.commit()
+        result_text = r.text
+        result_text = result_text.encode('utf-8')
+        print(result_text)
+        logger.debug('Result for insert into import_jq: %s' % (result_text))
         return True
 
-    except pymysql.Error as e:
-        db.rollback()
+    except requests.exceptions.RequestException as e:
         logger.error("Error [%s]" % (e))
         return False
 
-    finally:
-        db.close()
 
 
 
@@ -170,14 +147,14 @@ def main():
         exchange = ''
 
 
-        if result != 0 and result[0] == 1000:
-            array = result[1].split("#")
+        if result['downloader_jq_id'] != 0 and result['action'] == 1000:
+            array = result['value'].split("#")
             base = array[1]
             quote = array[2]
             exchange = array[0]
 
-            logger.info('Job action: %s, base: %s, quote: %s, exchange: %s' % (result[0], base, quote, exchange))
-            action_tmp = updateJob(result[0], '1100', result[1])
+            logger.info('Job with id %s and action: %s, base: %s, quote: %s, exchange: %s' % (result['downloader_jq_id'], result['action'], base, quote, exchange))
+            action_tmp = updateJob(result['downloader_jq_id'], '1100', result['value'])
 
             logger.info('Set action to %s' % ('1100'))
         else:
@@ -193,21 +170,22 @@ def main():
             logger.debug("Status returned from download Bitcoindata_Current() is %s" % (status_code[0]))
 
             if status_code[0] == 200:
-                action_tmp = updateJob(action_tmp, '1200', result[1])
+                action_tmp = updateJob(result['downloader_jq_id'], '1200', result['value'])
                 logger.info('Set action to %s' % ('1200'))
 
             if action_tmp == '1200':
-                status = insertImportJQ(status_code[1], result[0], result[1])
+                status = insertImportJQ(status_code[1], result['action'], result['value'])
+                logger.info('Add file: %s to import_jq' % (status_code[1]))
 
-            if status == True:
-                action_tmp = updateJob(action_tmp, '1300', result[1])
+            if status:
+                action_tmp = updateJob(result['downloader_jq_id'], '1300', result['value'])
             else:
                 # we have to send a mail
-                updateJob(action_tmp, '1900', result[1])
+                updateJob(result['downloader_jq_id'], '1900', result['value'])
 
         if action_tmp == '0':
             # we have to send a mail
-            updateJob(action_tmp, '1900', result[1])
+            updateJob(result['downloader_jq_id'], '1900', result['value'])
 
         t.sleep(5)
 
