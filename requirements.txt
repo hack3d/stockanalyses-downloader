@@ -1,7 +1,2 @@
-appdirs==1.4.3
-configparser==3.5.0
-packaging==16.8
-PyMySQL==0.7.10
-pyparsing==2.2.0
-requests==2.13.0
-six==1.10.0
+setuptools==20.7.0
+requests==2.9.1

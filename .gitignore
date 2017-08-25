@@ -87,4 +87,9 @@ ENV/
 
 # Rope project settings
 .ropeproject
+
+# Stockanalyses
 /downloader/config
+
+# Pycharm
+.idea/
