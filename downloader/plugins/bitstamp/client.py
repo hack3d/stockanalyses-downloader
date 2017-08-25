@@ -23,6 +23,12 @@ class BaseClient(object):
 
 
     def _request(self, func, url):
+        """
+        Handle the request
+        :param func: 
+        :param url: 
+        :return: 
+        """
 
         # construct url
         url = self.api_url + url
