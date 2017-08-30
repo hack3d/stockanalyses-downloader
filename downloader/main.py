@@ -19,6 +19,7 @@ config.read(dir_path + '/config')
 prod_server = config['prod']
 storage = config['path']
 
+
 ##########
 # Logger
 ##########
@@ -50,7 +51,7 @@ def getJob():
     """
     try:
         print(prod_server['url'] + 'job/downloader_jobs')
-        r = requests.get(prod_server['url'] + 'job/downloader_jobs')
+        r = requests.get(prod_server['url'] + 'job/downloader_jobs', auth=(prod_server['username'], prod_server['password']))
         print(r.text)
 
         return r.json()
@@ -67,7 +68,7 @@ def updateJob(job_id, new_action, value):
         json_data = []
         json_data.append({'action': str(new_action)})
         print(prod_server['url'] + 'job/set_downloader_jobs_state/' + str(job_id))
-        r = requests.put(prod_server['url'] + 'job/set_downloader_jobs_state/' + str(job_id),
+        r = requests.put(prod_server['url'] + 'job/set_downloader_jobs_state/' + str(job_id), auth=(prod_server['username'], prod_server['password']),
                          data=json.dumps(json_data), headers={'Content-Type': 'application/json'})
 
         result_text = r.text
@@ -119,7 +120,7 @@ def insertImportJQ(filename, action, value):
         logger.debug('insertImportJQ JSON-Data: %s' % (json_data))
 
         print(prod_server['url'] + 'job/add-import-data')
-        r = requests.post(prod_server['url'] + 'job/add-import-data', data=json.dumps(json_data),
+        r = requests.post(prod_server['url'] + 'job/add-import-data', auth=(prod_server['username'], prod_server['password']), data=json.dumps(json_data),
                           headers={'Content-Type': 'application/json'})
 
         result_text = r.text
@@ -136,6 +137,7 @@ def insertImportJQ(filename, action, value):
 def main():
     logger.info('Start StockanalysesDownloader...')
     bitstamp_client = client.Public()
+
 
     while True:
         logger.debug('Get a job...')

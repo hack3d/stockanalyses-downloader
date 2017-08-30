@@ -1,9 +1,7 @@
 [prod]
 url=http://localhost/api/v1/
-servername=localhost
 username=sql-user
 password=123456
-database=stockanalyses_v2
 
 [path]
 store_data=/opt/stockanalyses-data/
