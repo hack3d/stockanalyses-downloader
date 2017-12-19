@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import requests
+from downloader.plugins.IsinToCurrencyPair.currency import Currency
+
 
 class BaseClient(object):
-
-    api_url="https://www.bitstamp.net/api/v2/"
+    api_url = "https://www.bitstamp.net/api/v2/"
 
     def _construct_url(self, url, base, quote):
         """
@@ -20,7 +21,6 @@ class BaseClient(object):
         else:
             url = url + base.lower() + quote.lower()
             return url
-
 
     def _request(self, func, url):
         """
@@ -42,20 +42,24 @@ class BaseClient(object):
                 return r.status_code, 0
 
 
-
 class Public(BaseClient):
     """
     Public API
     """
 
-
-    def ticker(self, base="btc", quote="usd"):
+    def ticker(self, isin):
         """
         Returns dictionary
-        :param base: 
-        :param quote: 
+        :param isin:  
         :return: 
         """
 
-        url = self._construct_url("ticker/",base,quote)
-        return self._request("GET",url)
+        # get the base and quote from a dictionary inside the application.
+        currency_client = Currency()
+        c = currency_client.getCurrencyPair(isin)
+        base = c['base']
+        quote = c['quote']
+
+        # build url
+        url = self._construct_url("ticker/", base, quote)
+        return self._request("GET", url)
