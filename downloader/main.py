@@ -6,7 +6,6 @@ import os
 import json
 import logging.handlers
 import time as t
-from datetime import datetime
 import requests
 import pika
 
@@ -29,7 +28,7 @@ LOG_FILENAME = storage['storage_logs'] + 'Downloader.log'
 # create a logger with the custom name
 logging.basicConfig(filename=LOG_FILENAME, level=logging.DEBUG,
                     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-logger = logging.getLogger("stockanalyses.Indicator")
+logger = logging.getLogger("stockanalyses.Downloader")
 handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=11000000, backupCount=5)
 logger.addHandler(handler)
 
@@ -70,59 +69,6 @@ def updateJob(job_id, new_action, value):
 
     except requests.exceptions.RequestException as e:
         logger.error("Error [%s]" % (e))
-
-
-def generateFilename(filename):
-    """
-        Generate a unique filename
-    """
-    timestamp = datetime.now()
-    timestamp = timestamp.strftime("%Y%m%d%H%M%S")
-
-    return filename + "_" + timestamp
-
-
-def downloadBitcoindata_Current(data, exchange):
-    """
-        Downloading bitcoin data
-    """
-
-    filename_json = generateFilename(exchange)
-
-    logger.debug("Filename to save: %s" % filename_json)
-
-    # save json to file
-    with open(storage['store_data'] + filename_json, 'w') as f:
-        json.dump(data[1], f)
-
-    f.close()
-
-    return data[0], filename_json
-
-
-def insertImportJQ(filename, action, value):
-    """
-        Insert the file into the import job queue
-    """
-    try:
-        json_data = []
-        json_data.append({"action": str(action), "id_stock": str(value), "filename": str(filename)})
-        logger.debug('insertImportJQ JSON-Data: %s' % (json_data))
-
-        print(prod_server['url'] + 'job/add-import-data')
-        r = requests.post(prod_server['url'] + 'job/add-import-data',
-                          auth=(prod_server['username'], prod_server['password']), data=json.dumps(json_data),
-                          headers={'Content-Type': 'application/json'})
-
-        result_text = r.text
-        result_text = result_text.encode('utf-8')
-        print(result_text)
-        logger.debug('Result for insert into import_jq: %s' % (result_text))
-        return True
-
-    except requests.exceptions.RequestException as e:
-        logger.error("Error [%s]" % e)
-        return False
 
 
 def sendMessage2Queue(queue_message, exchange, isin):
@@ -210,7 +156,8 @@ def main():
                 # we have to send a mail
                 updateJob(result['downloader_jq_id'], '1900', result['value'])
 
-            t.sleep(5)
+            # no sleep time required on prod
+            #t.sleep(5)
 
 
 if __name__ == '__main__':
