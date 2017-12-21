@@ -10,3 +10,8 @@ Possible actions for RESTful API:
     - 1900 [error with the job]
  - weekly data
  - historical data
+ 
+ ## Exchanges
+ The following exchanges are supported at the moment:
+ - Bitstamp
+ - Bitfinex
