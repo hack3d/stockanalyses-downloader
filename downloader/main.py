@@ -135,22 +135,27 @@ def main():
                 logger.debug("HTTP Status: %s; JSON - Data: %s" % (data_json[0], data_json[1]))
 
                 # Data successfully downloaded
-                action_tmp = updateJob(result['downloader_jq_id'], '1200', result['value'])
-                logger.info('Set action to %s' % '1200')
+                if data_json[0] == 200:
+                    action_tmp = updateJob(result['downloader_jq_id'], '1200', result['value'])
+                    logger.info('Set action to %s' % '1200')
 
-                # Add data to RabbitMQ
-                if action_tmp == '1200':
-                    status = sendMessage2Queue(data_json[1], exchange, isin)
-                    logger.debug('Returnvalue from function `sendMessage2Queue`: %s' % status)
-                    logger.info('Add data to rabbitmq queue `importer` for exchange %s and isin %s' % (exchange, isin))
+                    # Add data to RabbitMQ
+                    if action_tmp == '1200':
+                        status = sendMessage2Queue(data_json[1], exchange, isin)
+                        logger.debug('Returnvalue from function `sendMessage2Queue`: %s' % status)
+                        logger.info('Add data to rabbitmq queue `importer` for exchange %s and isin %s' % (exchange, isin))
 
-                if status:
-                    action_tmp = updateJob(result['downloader_jq_id'], '1300', result['value'])
-                    logger.info('Set action to %s' % '1300')
+                    if status:
+                        action_tmp = updateJob(result['downloader_jq_id'], '1300', result['value'])
+                        logger.info('Set action to %s' % '1300')
+                    else:
+                        # we have to send a mail
+                        updateJob(result['downloader_jq_id'], '1900', result['value'])
+                        logger.warning('Set action to %s' % '1900')
                 else:
-                    # we have to send a mail
-                    updateJob(result['downloader_jq_id'], '1900', result['value'])
-                    logger.warn('Set action to %s' % '1900')
+                    logger.warning('Something went wrong on downloading data.')
+                    updateJob(result['downloader_jq_id'], '1000', result['value'])
+                    logger.info('Reset downloader job.')
 
             if action_tmp == '0':
                 # we have to send a mail
