@@ -9,8 +9,8 @@ import time as t
 import requests
 import pika
 
-from downloader.plugins.bitstamp.client import Public
-from downloader.plugins.bitfinex.client import Bitfinex
+from plugins.bitstamp.client import Public
+from plugins.bitfinex.client import Bitfinex
 
 
 # config

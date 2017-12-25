@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import requests
-from downloader.plugins.IsinToCurrencyPair.currency import Currency
+from plugins.IsinToCurrencyPair.currency import Currency
 
 
 class Bitfinex:
