@@ -1,5 +1,6 @@
 [prod]
 type=rest
+exchange=btfx
 url=http://localhost/api/v1/
 username=sql-user
 password=123456

@@ -5,12 +5,18 @@ import configparser
 import os
 import json
 import logging.handlers
-import time as t
+import time
 import requests
 import pika
+import queue
 
+# Third-party
+from btfxwss import BtfxWss
+
+# Homebrew
 from plugins.bitstamp.client import Public
 from plugins.bitfinex.client import Bitfinex
+from plugins.IsinToCurrencyPair.currency import Currency
 
 
 # config
@@ -42,6 +48,25 @@ def getJob():
         r = requests.get(prod_server['url'] + 'job/downloader_jobs',
                          auth=(prod_server['username'], prod_server['password']))
         print(r.text)
+
+        return r.json()
+
+    except requests.exceptions.RequestException as e:
+        logger.error("Error [%s]" % (e))
+
+
+def getWssJob(exchange):
+    """
+        Try to get coin pairs for websocket subscription
+    """
+    exchange = exchange.lower()
+    try:
+        print(prod_server['url'] + 'job/wss_downloader_jobs/' + exchange)
+        logger.info("URL for Websocket-Job: %s", prod_server['url'] + 'job/wss_downloader_jobs/' + exchange)
+        r = requests.get(prod_server['url'] + 'job/wss_downloader_jobs/' + exchange,
+                         auth=(prod_server['username'], prod_server['password']))
+        print(r.text)
+        logger.debug("Result Websocket-Job: %s", r.text)
 
         return r.json()
 
@@ -164,6 +189,86 @@ def main():
             # no sleep time required on prod
             #t.sleep(5)
 
+    if prod_server['type'] == 'wss':
+        logger.info("Websocket")
+        if prod_server['exchange'] == 'btfx':
+            logger.info("Exchange Bitfinex.")
+
+            job_data = getWssJob('btfx')
+            print(len(job_data['jobs_wss']))
+            logger.info('Found %s jobs', len(job_data['jobs_wss']))
+
+            btfx_pairs = []
+            currency_client = Currency()
+
+            for i in range(0, len(job_data['jobs_wss'])):
+                logger.info('ISIN: %s', job_data['jobs_wss'][i]['isin'])
+                print("ISIN: %s" % job_data['jobs_wss'][i]['isin'])
+                c = currency_client.getCurrencyPair(job_data['jobs_wss'][i]['isin'])
+                pair = c['base'] + c['quote']
+                btfx_pairs.append(pair.upper())
+
+            wss = BtfxWss()
+            wss.start()
+
+            while not wss.conn.connected.is_set():
+                time.sleep(1)
+
+            # Subscribe to some channels
+            #btfx_pairs = ['BTCEUR', 'BTCUSD', 'LTCUSD']
+
+            for i in btfx_pairs:
+                wss.subscribe_to_ticker(i)
+
+            # Wait 10 seconds after subscription. Needed for this library.
+            time.sleep(10)
+
+            # Accessing data stored in BtfxWss:
+            while 1:
+
+                #while not ticker_q.empty():
+                for i in btfx_pairs:
+                    try:
+                        isin = currency_client.getIsin(i.lower())
+                        logger.debug("Search for %s Isin: %s", i.lower(), isin)
+                        logger.debug("Before access data queue %s length: %s", i, wss.tickers(i).qsize())
+                        data = wss.tickers(i).get(block=False)
+                        print(data)
+                        logger.debug("After access data queue %s length: %s", i, wss.tickers(i).qsize())
+                        logger.debug("Low: %s, High: %s, Volume: %s, Last Price: %s, Daily change(%%): %s, "
+                                     "Daily change: %s, Ask: %s, Bid: %s,  Timestamp: %s", data[0][0][9], data[0][0][8],
+                                     data[0][0][7], data[0][0][6], (data[0][0][5]*100), data[0][0][4], data[0][0][2],
+                                     data[0][0][0], data[1])
+
+                        # Create json
+                        json_data = {}
+                        json_data['high'] = data[0][0][8]
+                        json_data['low'] = data[0][0][9]
+                        json_data['volume'] = data[0][0][7]
+                        json_data['last_price'] = data[0][0][6]
+                        json_data['ask'] = data[0][0][2]
+                        json_data['bid'] = data[0][0][0]
+                        json_data['mid'] = (json_data['bid'] + json_data['ask']) / 2
+                        json_data['timestamp'] = data[1]
+                        logger.info("JSON: %s", json.dumps(json_data))
+
+                        # for debugging to slow down
+                        #time.sleep(10)
+                        status = sendMessage2Queue(json_data, 'btfx', isin)
+                        if not status:
+                            logger.error("Something went wrong to insert data to rabbitmq. Please send mail.")
+
+                    except queue.Empty:
+                        pass
+                    except Exception as e:
+                        logger.error(e.args)
+
+            # Unsubscribing from channels:
+            for i in btfx_pairs:
+                wss.unsubscribe_from_ticker(i)
+
+            # Shutting down the client:
+            wss.stop()
 
 if __name__ == '__main__':
     main()
