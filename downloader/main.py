@@ -30,12 +30,30 @@ storage = config['path']
 ##########
 # Logger
 ##########
-LOG_FILENAME = storage['storage_logs'] + 'Downloader.log'
+log_level = logging.DEBUG
+
+if prod_server['log_level'] == 'DEBUG':
+    log_level = logging.DEBUG
+
+if prod_server['log_level'] == 'INFO':
+    log_level = logging.INFO
+
+if prod_server['log_level'] == 'WARNING':
+    log_level = logging.WARNING
+
+if prod_server['log_level'] == 'ERROR':
+    log_level = logging.ERROR
+
+if prod_server['log_level'] == 'CRITICAL':
+    log_level = logging.CRITICAL
+
+LOG_FILENAME = storage['storage_logs'] + storage['logs_filename']
 # create a logger with the custom name
-logging.basicConfig(filename=LOG_FILENAME, level=logging.DEBUG,
+logging.basicConfig(filename=LOG_FILENAME, level=log_level,
                     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("stockanalyses.Downloader")
-handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=int(storage['logs_max_size']), backupCount=int(storage['logs_rotated_files']))
+handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=int(storage['logs_max_size']),
+                                               backupCount=int(storage['logs_rotated_files']))
 logger.addHandler(handler)
 
 

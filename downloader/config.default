@@ -8,7 +8,7 @@ rabbitmq_host=localhost
 rabbitmq_username=guest
 rabbitmq_password=guest
 rabbitmq_queue=test
-log_leve=INFO
+log_level=INFO
 
 [path]
 store_data=/opt/stockanalyses-data/
