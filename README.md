@@ -15,3 +15,7 @@ Possible actions for RESTful API:
  The following exchanges are supported at the moment:
  - Bitstamp
  - Bitfinex
+ 
+ 
+ ## Update dependencies
+ `pipreqs --force /opt/stockanalyses-downloader/`

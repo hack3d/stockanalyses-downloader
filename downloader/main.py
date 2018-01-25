@@ -35,7 +35,7 @@ LOG_FILENAME = storage['storage_logs'] + 'Downloader.log'
 logging.basicConfig(filename=LOG_FILENAME, level=logging.DEBUG,
                     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("stockanalyses.Downloader")
-handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=11000000, backupCount=5)
+handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=int(storage['logs_max_size']), backupCount=int(storage['logs_rotated_files']))
 logger.addHandler(handler)
 
 
@@ -97,7 +97,10 @@ def updateJob(job_id, new_action, value):
 
 
 def sendMessage2Queue(queue_message, exchange, isin):
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+    credentials = pika.PlainCredentials(prod_server['rabbitmq_username'], prod_server['rabbitmq_password'])
+    connection = pika.BlockingConnection(pika.ConnectionParameters(prod_server['rabbitmq_host'], 5672, '/',
+                                                                   credentials))
+
     try:
         # add to json the exchange
         queue_message.update({'exchange': exchange})
@@ -105,11 +108,11 @@ def sendMessage2Queue(queue_message, exchange, isin):
         logger.debug('Added exchange to json: %s' % queue_message)
         json_decoded = json.dumps(queue_message)
         channel = connection.channel()
-        channel.queue_declare(queue='importer', durable=True)
+        channel.queue_declare(queue=prod_server['rabbitmq_queue'], durable=True)
 
-        channel.basic_publish(exchange='', routing_key='importer', body=json_decoded, properties=pika.BasicProperties(
+        channel.basic_publish(exchange='', routing_key=prod_server['rabbitmq_queue'], body=json_decoded, properties=pika.BasicProperties(
             content_type='application/json', delivery_mode=2))
-        logger.info('Publish message %s to queue %s' % (json_decoded, 'importer'))
+        logger.info('Publish message %s to queue %s' % (json_decoded, prod_server['rabbitmq_queue']))
         return True
     except pika.exceptions as e:
         logger.error("Error [%s]" % e)
