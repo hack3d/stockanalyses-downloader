@@ -27,6 +27,12 @@ config.read(dir_path + '/config')
 prod_server = config['prod']
 storage = config['path']
 
+# Default handling
+if prod_server['database_version'] == "":
+    database_version = 1
+else:
+    database_version = prod_server['database_version']
+
 ##########
 # Logger
 ##########
@@ -85,7 +91,7 @@ def getJob():
         return r.json()
 
     except requests.exceptions.RequestException as e:
-        logger.error("Error [%s]" % (e))
+        logger.error("Error [%s]", s)
 
 
 def getWssJob(exchange):
@@ -104,7 +110,20 @@ def getWssJob(exchange):
         return r.json()
 
     except requests.exceptions.RequestException as e:
-        logger.error("Error [%s]" % (e))
+        logger.error("Error [%s]", e)
+
+
+def getDatabaseVersion():
+    try:
+        print(prod_server['url'] + 'dbversion')
+        logger.info("URL for database version: %s", prod_server['url'] + 'dbversion')
+        r = requests.get(prod_server['url'] + 'dbversion', auth=(prod_server['username'], prod_server['password']))
+        print(r.text)
+        logger.debug('Result database version: %s', r.text)
+
+        return r.json()
+    except requests.exceptions.RequestException as e:
+        logger.error('Error [%s]', e)
 
 
 def updateJob(job_id, new_action, value):
@@ -157,154 +176,162 @@ def sendMessage2Queue(queue_message, exchange, isin):
 
 def main():
     logger.info('Start StockanalysesDownloader...')
+    logger.info('Default database version in config: %s' % database_version)
     logger.info('Type: %s' % prod_server['type'])
 
-    if prod_server['type'] == 'rest':
+    # we will check if the application can handle the database schema.
+    dbversion_data = getDatabaseVersion()
+    if dbversion_data['versions'][0]['version_number'] >= int(database_version):
+        logger.info('Database version: %s' % dbversion_data['versions'][0]['version_number'])
+        if prod_server['type'] == 'rest':
 
-        while True:
-            logger.debug('Get a job...')
-            action_tmp = "-1"
-            status = False
-            result = getJob()
-            isin = ''
-            exchange = ''
+            while True:
+                logger.debug('Get a job...')
+                action_tmp = "-1"
+                status = False
+                result = getJob()
+                isin = ''
+                exchange = ''
 
-            if result['downloader_jq_id'] != 0 and result['action'] == 1000 and result['type_idtype'] == 2:
-                array = result['value'].split("#")
-                isin = array[1]
-                exchange = array[0]
+                if result['downloader_jq_id'] != 0 and result['action'] == 1000 and result['type_idtype'] == 2:
+                    array = result['value'].split("#")
+                    isin = array[1]
+                    exchange = array[0]
 
-                logger.info('Job for cryptocurrency with id %s and action: %s, isin: %s, exchange: %s' % (
-                    result['downloader_jq_id'], result['action'], isin, exchange))
-                action_tmp = updateJob(result['downloader_jq_id'], '1100', result['value'])
+                    logger.info('Job for cryptocurrency with id %s and action: %s, isin: %s, exchange: %s' % (
+                        result['downloader_jq_id'], result['action'], isin, exchange))
+                    action_tmp = updateJob(result['downloader_jq_id'], '1100', result['value'])
 
-                logger.info('Set action to %s' % '1100')
-            else:
-                logger.info('No job for me...')
-
-            if action_tmp == '1100':
-                exchange = exchange.lower()
-                # Download data from exchange
-                if exchange == "btsp":
-                    bitstamp_client = Public()
-                    data_json = bitstamp_client.ticker(isin)
-
-                if exchange == "btfx":
-                    bitfinex_client = Bitfinex()
-                    data_json = bitfinex_client.ticker(isin)
-
-                logger.debug("HTTP Status: %s; JSON - Data: %s" % (data_json[0], data_json[1]))
-
-                # Data successfully downloaded
-                if data_json[0] == 200:
-                    action_tmp = updateJob(result['downloader_jq_id'], '1200', result['value'])
-                    logger.info('Set action to %s' % '1200')
-
-                    # Add data to RabbitMQ
-                    if action_tmp == '1200':
-                        status = sendMessage2Queue(data_json[1], exchange, isin)
-                        logger.debug('Returnvalue from function `sendMessage2Queue`: %s' % status)
-                        logger.info('Add data to rabbitmq queue `importer` for exchange %s and isin %s' % (exchange, isin))
-
-                    if status:
-                        action_tmp = updateJob(result['downloader_jq_id'], '1300', result['value'])
-                        logger.info('Set action to %s' % '1300')
-                    else:
-                        # we have to send a mail
-                        updateJob(result['downloader_jq_id'], '1900', result['value'])
-                        logger.warning('Set action to %s' % '1900')
+                    logger.info('Set action to %s' % '1100')
                 else:
-                    logger.warning('Something went wrong on downloading data.')
-                    updateJob(result['downloader_jq_id'], '1000', result['value'])
-                    logger.info('Reset downloader job.')
+                    logger.info('No job for me...')
 
-            if action_tmp == '0':
-                # we have to send a mail
-                updateJob(result['downloader_jq_id'], '1900', result['value'])
+                if action_tmp == '1100':
+                    exchange = exchange.lower()
+                    # Download data from exchange
+                    if exchange == "btsp":
+                        bitstamp_client = Public()
+                        data_json = bitstamp_client.ticker(isin)
 
-            # no sleep time required on prod
-            #t.sleep(5)
+                    if exchange == "btfx":
+                        bitfinex_client = Bitfinex()
+                        data_json = bitfinex_client.ticker(isin)
 
-    if prod_server['type'] == 'wss':
-        logger.info("Websocket")
-        if prod_server['exchange'] == 'btfx':
-            logger.info("Exchange Bitfinex.")
+                    logger.debug("HTTP Status: %s; JSON - Data: %s" % (data_json[0], data_json[1]))
 
-            job_data = getWssJob('btfx')
-            print(len(job_data['jobs_wss']))
-            logger.info('Found %s jobs', len(job_data['jobs_wss']))
+                    # Data successfully downloaded
+                    if data_json[0] == 200:
+                        action_tmp = updateJob(result['downloader_jq_id'], '1200', result['value'])
+                        logger.info('Set action to %s' % '1200')
 
-            btfx_pairs = []
-            currency_client = Currency()
+                        # Add data to RabbitMQ
+                        if action_tmp == '1200':
+                            status = sendMessage2Queue(data_json[1], exchange, isin)
+                            logger.debug('Returnvalue from function `sendMessage2Queue`: %s' % status)
+                            logger.info('Add data to rabbitmq queue `importer` for exchange %s and isin %s' % (exchange, isin))
 
-            for i in range(0, len(job_data['jobs_wss'])):
-                logger.info('ISIN: %s', job_data['jobs_wss'][i]['isin'])
-                print("ISIN: %s" % job_data['jobs_wss'][i]['isin'])
-                c = currency_client.getCurrencyPair(job_data['jobs_wss'][i]['isin'])
-                pair = c['base'] + c['quote']
-                btfx_pairs.append(pair.upper())
+                        if status:
+                            action_tmp = updateJob(result['downloader_jq_id'], '1300', result['value'])
+                            logger.info('Set action to %s' % '1300')
+                        else:
+                            # we have to send a mail
+                            updateJob(result['downloader_jq_id'], '1900', result['value'])
+                            logger.warning('Set action to %s' % '1900')
+                    else:
+                        logger.warning('Something went wrong on downloading data.')
+                        updateJob(result['downloader_jq_id'], '1000', result['value'])
+                        logger.info('Reset downloader job.')
 
-            wss = BtfxWss()
-            wss.start()
+                if action_tmp == '0':
+                    # we have to send a mail
+                    updateJob(result['downloader_jq_id'], '1900', result['value'])
 
-            while not wss.conn.connected.is_set():
-                time.sleep(1)
+                # no sleep time required on prod
+                #t.sleep(5)
 
-            # Subscribe to some channels
-            #btfx_pairs = ['BTCEUR', 'BTCUSD', 'LTCUSD']
+        if prod_server['type'] == 'wss':
+            logger.info("Websocket")
+            if prod_server['exchange'] == 'btfx':
+                logger.info("Exchange Bitfinex.")
 
-            for i in btfx_pairs:
-                wss.subscribe_to_ticker(i)
+                job_data = getWssJob('btfx')
+                print(len(job_data['jobs_wss']))
+                logger.info('Found %s jobs', len(job_data['jobs_wss']))
 
-            # Wait 10 seconds after subscription. Needed for this library.
-            time.sleep(10)
+                btfx_pairs = []
+                currency_client = Currency()
 
-            # Accessing data stored in BtfxWss:
-            while 1:
+                for i in range(0, len(job_data['jobs_wss'])):
+                    logger.info('ISIN: %s', job_data['jobs_wss'][i]['isin'])
+                    print("ISIN: %s" % job_data['jobs_wss'][i]['isin'])
+                    c = currency_client.getCurrencyPair(job_data['jobs_wss'][i]['isin'])
+                    pair = c['base'] + c['quote']
+                    btfx_pairs.append(pair.upper())
 
-                #while not ticker_q.empty():
+                wss = BtfxWss()
+                wss.start()
+
+                while not wss.conn.connected.is_set():
+                    time.sleep(1)
+
+                # Subscribe to some channels
+                #btfx_pairs = ['BTCEUR', 'BTCUSD', 'LTCUSD']
+
                 for i in btfx_pairs:
-                    try:
-                        isin = currency_client.getIsin(i.lower())
-                        logger.debug("Search for %s Isin: %s", i.lower(), isin)
-                        logger.debug("Before access data queue %s length: %s", i, wss.tickers(i).qsize())
-                        data = wss.tickers(i).get(block=False)
-                        print(data)
-                        logger.debug("After access data queue %s length: %s", i, wss.tickers(i).qsize())
-                        logger.debug("Low: %s, High: %s, Volume: %s, Last Price: %s, Daily change(%%): %s, "
+                    wss.subscribe_to_ticker(i)
+
+                # Wait 10 seconds after subscription. Needed for this library.
+                time.sleep(10)
+
+                # Accessing data stored in BtfxWss:
+                while 1:
+
+                    #while not ticker_q.empty():
+                    for i in btfx_pairs:
+                        try:
+                            isin = currency_client.getIsin(i.lower())
+                            logger.debug("Search for %s Isin: %s", i.lower(), isin)
+                            logger.debug("Before access data queue %s length: %s", i, wss.tickers(i).qsize())
+                            data = wss.tickers(i).get(block=False)
+                            print(data)
+                            logger.debug("After access data queue %s length: %s", i, wss.tickers(i).qsize())
+                            logger.debug("Low: %s, High: %s, Volume: %s, Last Price: %s, Daily change(%%): %s, "
                                      "Daily change: %s, Ask: %s, Bid: %s,  Timestamp: %s", data[0][0][9], data[0][0][8],
                                      data[0][0][7], data[0][0][6], (data[0][0][5]*100), data[0][0][4], data[0][0][2],
                                      data[0][0][0], data[1])
 
-                        # Create json
-                        json_data = {}
-                        json_data['high'] = data[0][0][8]
-                        json_data['low'] = data[0][0][9]
-                        json_data['volume'] = data[0][0][7]
-                        json_data['last_price'] = data[0][0][6]
-                        json_data['ask'] = data[0][0][2]
-                        json_data['bid'] = data[0][0][0]
-                        json_data['mid'] = (json_data['bid'] + json_data['ask']) / 2
-                        json_data['timestamp'] = data[1]
-                        logger.info("JSON: %s", json.dumps(json_data))
+                            # Create json
+                            json_data = {}
+                            json_data['high'] = data[0][0][8]
+                            json_data['low'] = data[0][0][9]
+                            json_data['volume'] = data[0][0][7]
+                            json_data['last_price'] = data[0][0][6]
+                            json_data['ask'] = data[0][0][2]
+                            json_data['bid'] = data[0][0][0]
+                            json_data['mid'] = (json_data['bid'] + json_data['ask']) / 2
+                            json_data['timestamp'] = data[1]
+                            logger.info("JSON: %s", json.dumps(json_data))
 
-                        # for debugging to slow down
-                        #time.sleep(10)
-                        status = sendMessage2Queue(json_data, 'btfx', isin)
-                        if not status:
-                            logger.error("Something went wrong to insert data to rabbitmq. Please send mail.")
+                            # for debugging to slow down
+                            #time.sleep(10)
+                            status = sendMessage2Queue(json_data, 'btfx', isin)
+                            if not status:
+                                logger.error("Something went wrong to insert data to rabbitmq. Please send mail.")
 
-                    except queue.Empty:
-                        pass
-                    except Exception as e:
-                        logger.error(e.args)
+                        except queue.Empty:
+                            pass
+                        except Exception as e:
+                            logger.error(e.args)
 
-            # Unsubscribing from channels:
-            for i in btfx_pairs:
-                wss.unsubscribe_from_ticker(i)
+                # Unsubscribing from channels:
+                for i in btfx_pairs:
+                    wss.unsubscribe_from_ticker(i)
 
-            # Shutting down the client:
-            wss.stop()
+                # Shutting down the client:
+                wss.stop()
+    else:
+        logger.warning("Database version is to low. database: %s, config: %s",
+                       dbversion_data['versions'][0]['version_number'], database_version)
 
 if __name__ == '__main__':
     main()
