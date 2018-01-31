@@ -9,7 +9,6 @@ rabbitmq_username=guest
 rabbitmq_password=guest
 rabbitmq_queue=test
 log_level=INFO
-database_version=1
 
 [path]
 store_data=/opt/stockanalyses-data/

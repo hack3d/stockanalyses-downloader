@@ -28,10 +28,9 @@ prod_server = config['prod']
 storage = config['path']
 
 # Default handling
-if prod_server['database_version'] == "":
-    database_version = 1
-else:
-    database_version = prod_server['database_version']
+# Minimum database version this application can handle
+database_version = 1
+
 
 ##########
 # Logger
@@ -176,7 +175,7 @@ def sendMessage2Queue(queue_message, exchange, isin):
 
 def main():
     logger.info('Start StockanalysesDownloader...')
-    logger.info('Default database version in config: %s' % database_version)
+    logger.info('Database version in application: %s' % database_version)
     logger.info('Type: %s' % prod_server['type'])
 
     # we will check if the application can handle the database schema.
