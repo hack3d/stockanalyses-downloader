@@ -1,6 +1,4 @@
 [prod]
-type=rest
-exchange=btfx
 url=http://localhost/api/v1/
 username=sql-user
 password=123456
@@ -17,3 +15,6 @@ storage_logs=/opt/stockanalyses-logs/
 logs_max_size=11000000
 logs_rotated_files=5
 logs_filename=Downloader_btfx.log
+
+[heartbeat]
+app_name=downloader
