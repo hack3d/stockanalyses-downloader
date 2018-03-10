@@ -351,7 +351,8 @@ def handle_receiving_data():
                     if action_tmp == '0':
                         # we have to send a mail
                         updateJob(result['downloader_jq_id'], '1900', result['value'])
-
+        except Exception as e:
+            logger.error(e.args)
 
     if downloader_type == 'wss':
         logger.info("Websocket")
